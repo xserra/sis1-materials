@@ -1,5 +1,5 @@
 # sis1-materials
-materials for the Signals and Systems I course at the UPF, including labs notebook assignments, utilities for labs.
+Materials for the Signals and Systems I course at the UPF, including assignments, software utilities for labs, and materials for seminars and lectures.
 
 To install the materials, create a virtual environment and install the dependencies.
 On Mac/Linux this will be:
