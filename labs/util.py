@@ -1,10 +1,12 @@
+"""Shared audio, plotting, and signal-processing helpers used across the labs."""
+
 import soundfile as sf
 import matplotlib.pyplot as plt
 import numpy as np
-import librosa
 from plotly.offline import iplot
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+from scipy import signal
 
 colors = [
     '#1f77b4',
@@ -19,136 +21,12 @@ colors = [
     '#17becf'
 ]
 
-
-def load_audio(filepath):
-    data, sr = sf.read(filepath)
-
-    # Convert to mono
-    if len(data.shape) > 1:
-        data = data[:, 0]
-
-    # Remove DC component
-    data = data - np.mean(data)
-
-    return data, sr
-
-
-def save_audio(filepath, data, samplerate):
-    sf.write(filepath, data, samplerate)
-
-
-def plot_signals(y, sr, t_start=0, t_end=-1, name='audio signal', mode='lines'):
-    if type(y) is not list:
-        y = [y]
-
-    if type(name) is not list:
-        names = [name + ' ' + str(j) for j in range(len(y))]
-    else:
-        assert len(name) == len(y)
-        names = name
-
-    Ts = 1/sr
-
-    t = np.linspace(0, len(y[0])*Ts, len(y[0]))
-
-    if t_end == -1:
-        t_end = len(y[0])*Ts
-
-    samples_start = int(t_start*sr)
-    samples_end = int(t_end*sr)
-
-    data_plot = []
-    for j in range(len(y)):
-        data_plot.append(
-            go.Scatter(
-                x=t[samples_start:samples_end],
-                y=y[j][samples_start:samples_end],
-                name=names[j],
-                mode=mode,
-                line=dict(shape='linear', color=colors[j % len(colors)])
-            )
-        )
-    iplot(data_plot)
-
-
-def plot_spectrogram(ff, tt, S):
-    S = librosa.power_to_db(S)
-    plt.pcolormesh(tt, ff, S, shading='gouraud')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [sec]')
-
-
-def plot_mean_spectrogram(S, sr, n_fft):
-    freqs = np.linspace(0, sr/2 - sr/n_fft, int(n_fft/2+1))
-
-    if type(S) is not list:
-        mean_spec = np.mean(S, axis=1)
-
-        data_plot = [
-            go.Scatter(
-                x=freqs,
-                y=np.sqrt(mean_spec/np.amax(mean_spec)),
-                mode='lines+markers',
-                line=dict(shape='linear', color=colors[0])
-            )
-        ]
-    else:
-        data_plot = []
-        for j in range(len(S)):
-            mean_spec = np.mean(S[j], axis=1)
-            data_plot.append(
-                go.Scatter(
-                    x=freqs,
-                    y=np.sqrt(mean_spec/np.amax(mean_spec)),
-                    mode='lines+markers',
-                    name=str(j),
-                    line=dict(shape='linear', color=colors[j % len(colors)])
-                )
-            )
-    fig = go.Figure(data_plot)
-    fig.update_yaxes(type="log")
-    fig.show()
-
-
-def plot_spectrum_at(ff, tt, S, time):
-    if type(S) is not list:
-        time_hop = np.argmin((tt - time)**2)
-
-        fft = S[:, time_hop]
-
-        data_plot = [
-            go.Scatter(
-                x=ff,
-                y=np.sqrt(fft/np.amax(fft)),
-                mode='lines+markers',
-                line=dict(shape='linear', color=colors[0])
-            )
-        ]
-
-    else:
-        data_plot = []
-        time_hop = np.argmin((tt - time)**2)
-        for j in range(len(S)):
-            fft = S[j][:, time_hop]
-            data_plot.append(
-                go.Scatter(
-                    x=ff,
-                    y=np.sqrt(fft/np.amax(fft)),
-                    mode='lines+markers',
-                    name=str(j),
-                    line=dict(shape='linear', color=colors[j % len(colors)])
-                )
-            )
-    fig = go.Figure(data_plot)
-    fig.update_yaxes(type="log")
-    fig.show()
-
-
 def plot_complex(z, name='z'):
-    if type(z) is not list:
+    """Plot complex numbers on the complex plane together with the unit circle."""
+    if not isinstance(z, list):
         z = [z]
 
-    if type(name) is not list:
+    if not isinstance(name, list):
         names = [name + '_' + str(j) for j in range(len(z))]
     else:
         assert len(name) == len(z)
@@ -203,40 +81,162 @@ def plot_complex(z, name='z'):
     )
     fig.show()
 
+def load_audio(filepath):
+    """Load an audio file as mono, remove its DC component, and return data and sample rate."""
+    data, sr = sf.read(filepath)
 
-def plot_frequency_response(w, H):
-    fig = make_subplots(rows=2, cols=1)
-    fig.add_trace(
-        go.Scatter(x=w, y=np.abs(H), name="Magnitude"),
-    row=1, col=1
-    )
+    # Convert to mono
+    if len(data.shape) > 1:
+        data = np.mean(data, axis=1)
 
-    fig.add_trace(
-        go.Scatter(x=w, y=np.angle(H), name='Phase'),
-        row=2, col=1
-    )
+    # Remove DC component
+    data = data - np.mean(data)
 
-    fig.update_xaxes(
-        title_text="Normalized Radian Frequency", row=2, col=1,
-        tickmode = 'array',
-        tickvals = [-np.pi, -3*np.pi/4, -np.pi/2, -np.pi/4, 0, np.pi/4, np.pi/2, 3*np.pi/4,np.pi],
-        ticktext = ['$-\pi$', '$-3\pi/4$', '$-\pi/2$', '$-\pi/4$', '$0$', '$\pi/4$', '$\pi/2$', '$3\pi/4$', '$\pi$']
-    )
-    fig.update_xaxes(
-        row=1, col=1,
-        tickmode = 'array',
-        tickvals = [-np.pi, -3*np.pi/4, -np.pi/2, -np.pi/4, 0, np.pi/4, np.pi/2, 3*np.pi/4,np.pi],
-        ticktext = ['$-\pi$', '$-3\pi/4$', '$-\pi/2$', '$-\pi/4$', '$0$', '$\pi/4$', '$\pi/2$', '$3\pi/4$', '$\pi$']
-    )
-    fig.update_yaxes(title_text="Phase <H", row=2, col=1)
-    fig.update_yaxes(title_text="Magnitude |H|", row=1, col=1)
-    fig.update_layout(
-        title="Frequency Response",
-    )
+    return data, sr
+
+
+def save_audio(filepath, data, samplerate):
+    """Write audio data to disk at the given sample rate."""
+    sf.write(filepath, data, samplerate)
+
+
+def plot_signals(y, sr, t_start=0, t_end=-1, name='audio signal', mode='lines'):
+    """Plot one signal or a list of signals over time using Plotly."""
+    if not isinstance(y, list):
+        y = [y]
+
+    names = name
+    if not isinstance(names, list):
+        names = [name + ' ' + str(j) for j in range(len(y))]
+
+    Ts = 1/sr
+
+    t = np.linspace(0, len(y[0])*Ts, len(y[0]))
+
+    if t_end == -1:
+        t_end = len(y[0])*Ts
+
+    samples_start = int(t_start*sr)
+    samples_end = int(t_end*sr)
+
+    data_plot = []
+    for j in range(len(y)):
+        data_plot.append(
+            go.Scatter(
+                x=t[samples_start:samples_end],
+                y=y[j][samples_start:samples_end],
+                name=names[j],
+                mode=mode,
+                line=dict(shape='linear', color=colors[j % len(colors)])
+            )
+        )
+    fig = go.Figure(data=data_plot)
     fig.show()
 
+def plot_spectrum(x: np.ndarray, w: np.ndarray | None = None, N: int | None = None, sr: float | None = None):
+    """Plot the magnitude spectrum of a signal in decibels and return the axis.
+
+    Args:
+        x: Input signal.
+        w: Analysis window. If omitted, a Hann window is used by default.
+        N: FFT size. It must match the signal length; zero-padding is not used.
+        sr: Sampling rate in Hz.
+    """
+    if sr is None:
+        raise ValueError('sr must be provided')
+
+    x = np.asarray(x)
+    if w is None:
+        w = np.hanning(x.size)
+    else:
+        w = np.asarray(w, dtype=float)
+        if w.size != x.size:
+            raise ValueError('w must have the same length as x')
+
+    if N is None:
+        N = x.size
+    elif N != x.size:
+        raise ValueError('N must match the signal length; zero-padding is not used')
+
+    w = w / np.sum(w)
+    xw = x * w
+    Xh = np.fft.rfft(xw, n=N)
+    freqs = np.fft.rfftfreq(N, d=1 / sr)
+    magnitude_db = 20 * np.log10(np.maximum(np.abs(Xh), 1e-12))
+
+    plt.figure(figsize=(10, 3))
+    ax = plt.gca()
+    ax.plot(freqs, magnitude_db)
+    ax.set_xlabel('Frequency (Hz)')
+    ax.set_ylabel('Magnitude (dB)')
+    ax.set_title('Magnitude spectrum')
+    return ax
+
+
+
+def plot_spectrogram(x: np.ndarray, sr: float, w: np.ndarray | None = None, N: int | None = None, H: int = 256):
+    """Plot the magnitude spectrogram of a signal in decibels and return the axis.
+
+    Args:
+        x: Input signal.
+        sr: Sampling rate in Hz.
+        w: Analysis window. If omitted, a Hann window is used by default.
+        N: FFT size. If omitted, the window length is used.
+        H: Hop size in samples.
+    """
+    if H <= 0:
+        raise ValueError(f'Hop size (H={H}) must be positive')
+
+    if w is None:
+        w = 'hann'
+
+    if N is None:
+        if isinstance(w, str):
+            N = 256 # A default for string window
+        else:
+            N = np.asarray(w).size
+
+    freqs, times, magnitude_spectra = signal.stft(x, fs=sr, window=w, nperseg=N, noverlap=N-H, nfft=N)
+    magnitude_db = 20 * np.log10(np.maximum(np.abs(magnitude_spectra), 1e-12))
+
+    plt.figure(figsize=(10, 4))
+    ax = plt.gca()
+    ax.pcolormesh(times, freqs, magnitude_db, shading='gouraud')
+    ax.set_ylabel('Frequency [Hz]')
+    ax.set_xlabel('Time [sec]')
+    ax.set_title('Magnitude spectrogram')
+    return ax
+
+
+def plot_frequency_response(b, a=1, worN=2048, sr=None):
+    """Plot the magnitude and phase response of a discrete-time filter."""
+    w, H = signal.freqz(b, a, worN=worN)
+
+    if sr is None:
+        freqs = w / np.pi
+        xlabel = 'Normalized frequency (×π rad/sample)'
+    else:
+        freqs = w * sr / (2 * np.pi)
+        xlabel = 'Frequency (Hz)'
+
+    magnitude_db = 20 * np.log10(np.maximum(np.abs(H), 1e-12))
+    phase = np.angle(H)
+
+    fig, axes = plt.subplots(2, 1, figsize=(10, 5), sharex=True)
+    axes[0].plot(freqs, magnitude_db)
+    axes[0].set_ylabel('Magnitude (dB)')
+    axes[0].set_title('Frequency response')
+    axes[0].grid(alpha=0.3)
+
+    axes[1].plot(freqs, phase)
+    axes[1].set_xlabel(xlabel)
+    axes[1].set_ylabel('Phase (rad)')
+    axes[1].grid(alpha=0.3)
+    fig.tight_layout()
+    return axes
 
 def plot_zeros_poles(z, p):
+    """Plot zeros and poles on the complex plane together with the unit circle."""
     z = np.asarray(z)
     p = np.asarray(p)
 
