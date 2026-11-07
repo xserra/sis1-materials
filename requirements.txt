@@ -6,3 +6,4 @@ soundfile
 librosa
 plotly
 nbformat
+ipywidgets
